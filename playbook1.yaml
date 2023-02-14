@@ -1,0 +1,60 @@
+---
+- name: Ldap configuration
+  hosts: all
+  become: yes
+  vars:
+    Ldap_Pass: 241202 
+  tasks:
+   - name: Update and upgrade apt
+     apt:
+      upgrade: yes
+      update_cache: yes
+   - name: Install Ldap 
+     command: apt install {{ item }}
+     with_items:
+      - slapd ldap-utils
+     environment:
+      DEBIAN_FRONTEND: noninteractive
+   - name: Firewall add service
+     command: ufw allow ldap
+   - name: Create admin password
+     command: slappasswd -s {{Ldap_Pass}}  
+     register: password
+   - name: Create ldif for rootpass
+     copy:
+      dest: /usr/local/etc/ldaprootpasswd.ldif
+      content: |
+       dn: olcDatabase={0}config,cn=config
+       changetype: modify
+       add: olcRootPW
+       olcRootPW: {{password.stdout}}
+
+       dn: olcDatabase={1}mdb,cn=config
+       changetype: modify
+       replace: olcRootPW
+       olcRootPW: {{password.stdout}}     
+   - name: Create ldif for add
+     copy:
+      dest: /usr/local/etc/add.ldif
+      content: |
+       dn: ou=Man1,dc=nodomain
+       objectClass: organizationalUnit
+       ou: Man1
+       
+       dn: ou=Man2,dc=nodomain
+       objectClass: organizationalUnit
+       ou: Man2
+      
+       dn: ou=Group1,dc=nodomain
+       objectClass: organizationalUnit
+       ou: Group1
+       
+       dn: ou=Group2,dc=nodomain
+       objectClass: organizationalUnit
+       ou: Group2
+      
+   - name: Change password
+     command: ldapadd -Y EXTERNAL -H ldapi:// -f /usr/local/etc/ldaprootpasswd.ldif
+   - name: Add group and Users
+     command: ldapadd -x -D cn=admin,dc=nodomain -w {{Ldap_Pass}} -f /usr/local/etc/add.ldif
+     
